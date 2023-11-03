@@ -145,7 +145,26 @@ public class Client {
 	 * outputFile: is the name of the file that the server will create
 	*/
 	public void sendMetaData(int portNumber, InetAddress IPAddress, File file, String outputFile) {
-		exitErr("sendMetaData is not implemented");
+		// initialize the socket
+		try {
+			socket = new DatagramSocket();
+		} catch (SocketException e) {
+			e.printStackTrace();
+		}
+		MetaData metaData = new MetaData();
+		metaData.setName(outputFile);
+		metaData.setSize((int) file.length());
+		try {
+			ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+            ObjectOutputStream os = new ObjectOutputStream(outputStream);
+            os.writeObject(metaData);
+            byte[] sendData = outputStream.toByteArray();
+            DatagramPacket packet = new DatagramPacket(sendData, sendData.length, IPAddress, portNumber);
+            socket.send(packet);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		socket.close();
 	}
 
 
