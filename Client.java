@@ -169,8 +169,62 @@ public class Client {
 
 
 	/* TODO: Send the file to the server without corruption*/
+
 	public void sendFileNormal(int portNumber, InetAddress IPAddress, File file) {
-		exitErr("sendFileNormal is not implemented");
+		try {
+			socket = new DatagramSocket();
+		} catch (SocketException e) {
+			e.printStackTrace();
+		}
+		// work out how many segments we are going to send
+		int currentSeg = 0;
+
+		
+		try (Reader reader = new FileReader(file)) {
+            char[] chars = new char[4];
+            int charsRead;
+
+            // Read the file 4 characters at a time
+            while ((charsRead = reader.read(chars)) != -1) {
+                String payload = new String(chars, 0, charsRead);
+                Segment segment = new Segment();
+				segment.setPayLoad(payload);
+				segment.setSq(currentSeg);
+				segment.setType(SegmentType.Data);
+				segment.setSize(charsRead);
+				segment.setChecksum(checksum(payload, false));
+				ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+				ObjectOutputStream os = new ObjectOutputStream(outputStream);
+				os.writeObject(segment);
+				byte[] sendData = outputStream.toByteArray();
+				DatagramPacket packet = new DatagramPacket(sendData, sendData.length, IPAddress, portNumber);
+				System.out.println("Sending segment " + currentSeg);
+				socket.send(packet);
+				
+
+				// wait for ack before sending next segment
+				byte[] receiveData = new byte[1024];
+				DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
+				socket.receive(receivePacket);
+				ByteArrayInputStream inputStream = new ByteArrayInputStream(receiveData);
+				ObjectInputStream is = new ObjectInputStream(inputStream);
+				Segment ackSegment = (Segment) is.readObject();
+				if (ackSegment.getType() == SegmentType.Ack && ackSegment.getSq() == currentSeg) {
+					System.out.println("Received ACK for segment " + currentSeg);
+				} else {
+					System.out.println("Received NAK for segment " + currentSeg);
+					System.out.println("Expected ACK: " + currentSeg + " Received ACK: " + ackSegment.getSq());
+					System.out.println("Expected Type: " + SegmentType.Ack + " Received Type: " + ackSegment.getType());
+				}
+				// increment the segment number
+				currentSeg = (currentSeg + 1) % 2;
+
+				
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+
+        }
 	} 
 
 	/* TODO: This function is essentially the same as the sendFileNormal function
