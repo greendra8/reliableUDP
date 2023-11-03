@@ -193,22 +193,24 @@ public class Client {
 				segment.setType(SegmentType.Data);
 				segment.setSize(charsRead);
 				segment.setChecksum(checksum(payload, false));
-				ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-				ObjectOutputStream os = new ObjectOutputStream(outputStream);
-				os.writeObject(segment);
-				byte[] sendData = outputStream.toByteArray();
+				ByteArrayOutputStream outputStream = new ByteArrayOutputStream(); // place in memory where we can write bytes
+				ObjectOutputStream os = new ObjectOutputStream(outputStream); // allows us to write objects to the output stream (this serializes objects, i.e. converts them to bytes)
+				os.writeObject(segment); // writes the segment ByteArrayOutputStream through the ObjectOutputStream (takes segment Object, serializes it, and writes it to the output stream)
+				byte[] sendData = outputStream.toByteArray(); // copies contents from ByteArrayOutputStream buffer to a byte array
+				// create and send the packet
 				DatagramPacket packet = new DatagramPacket(sendData, sendData.length, IPAddress, portNumber);
 				System.out.println("Sending segment " + currentSeg);
 				socket.send(packet);
 				
 
 				// wait for ack before sending next segment
-				byte[] receiveData = new byte[1024];
-				DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
-				socket.receive(receivePacket);
-				ByteArrayInputStream inputStream = new ByteArrayInputStream(receiveData);
-				ObjectInputStream is = new ObjectInputStream(inputStream);
-				Segment ackSegment = (Segment) is.readObject();
+				byte[] receiveData = new byte[1024]; // buffer to store received data
+				DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length); // packet to store received data
+				socket.receive(receivePacket); // receive data from the socket and store it in the packet
+				ByteArrayInputStream inputStream = new ByteArrayInputStream(receiveData); // place in memory where we can read bytes. takes received data and puts it in the buffer
+				ObjectInputStream is = new ObjectInputStream(inputStream); // deserializes the received data and converts it to an object
+				Segment ackSegment = (Segment) is.readObject(); // reads the object and casts it to a Segment object so we can access its fields
+				// check if the ack is correct (type and sequence number)
 				if (ackSegment.getType() == SegmentType.Ack && ackSegment.getSq() == currentSeg) {
 					System.out.println("Received ACK for segment " + currentSeg);
 				} else {
@@ -218,8 +220,6 @@ public class Client {
 				}
 				// increment the segment number
 				currentSeg = (currentSeg + 1) % 2;
-
-				
             }
         } catch (Exception e) {
             e.printStackTrace();
