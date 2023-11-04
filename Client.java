@@ -227,7 +227,7 @@ public class Client {
             }
 			if (charsRead == -1) {
 				System.out.println("SENDER: Total segments sent: " + segCount);
-            }
+			}
         } catch (Exception e) {
             e.printStackTrace();
 
@@ -238,8 +238,97 @@ public class Client {
 	 *      except that it resends data segments if no ACK for a segment is 
 	 *      received from the server.*/
 	public void sendFileWithTimeOut(int portNumber, InetAddress IPAddress, File file, float loss) {
-		exitErr("sendFileWithTimeOut is not implemented");
-	} 
+		final int TIMEOUT = 1000; // Timeout in milliseconds
+		final int RETRY_LIMIT = 5; // Number of retries before exiting transmission
+        try {
+            socket = new DatagramSocket();
+            socket.setSoTimeout(TIMEOUT); // Sets blocking time for socket.receive() calls (default is infinite)
+        } catch (SocketException e) {
+            e.printStackTrace();
+        }
+
+        int currentSeg = 0;
+		int segCount = 0;
+        int retries = 0; // To count consecutive retries
+
+        try (Reader reader = new FileReader(file)) { // FileReader remembers its position in the file
+            char[] chars = new char[4];
+            int charsRead; // will be 4 unless we're at the end of the file
+
+            while ((charsRead = reader.read(chars)) != -1) { // reads up to 4 characters into charsRead. remembers position. if chars is empty, returns -1
+                String payload = new String(chars, 0, charsRead); // saves the read characters as a string
+                Segment segment = new Segment();
+                segment.setPayLoad(payload);
+                segment.setSq(currentSeg);
+                segment.setType(SegmentType.Data);
+                segment.setSize(charsRead);
+                
+
+                boolean ackReceived = false;
+                while (!ackReceived && retries < RETRY_LIMIT) {
+					// Simulate corruption
+					boolean corrupted = isCorrupted(loss);
+					segment.setChecksum(checksum(payload, corrupted));
+		
+                    try {
+                        // Send the segment
+                        ByteArrayOutputStream outputStream = new ByteArrayOutputStream(); 
+                        ObjectOutputStream os = new ObjectOutputStream(outputStream); 
+                        os.writeObject(segment); 
+                        byte[] sendData = outputStream.toByteArray();
+                        DatagramPacket packet = new DatagramPacket(sendData, sendData.length, IPAddress, portNumber);
+						System.out.println("SENDER: Sending segment: sq:" + currentSeg + ", size:" + charsRead + ", checksum:" + segment.getChecksum() + ", content: (" + payload + ")");
+                        if (corrupted) {
+							System.out.println("Corruption has occurred in segment " + currentSeg);
+							System.out.println("\t\t>>>>>>> NETWORK ERROR: segment checksum is corrupted <<<<<<<<<");
+						}
+						socket.send(packet);
+
+                        // Attempt to receive the ACK
+                        byte[] receiveData = new byte[1024];
+                        DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
+						System.out.println("SENDER: Waiting for ACK");
+                        socket.receive(receivePacket);
+                        ByteArrayInputStream inputStream = new ByteArrayInputStream(receiveData);
+                        ObjectInputStream is = new ObjectInputStream(inputStream);
+                        Segment ackSegment = (Segment) is.readObject();
+
+                        if (ackSegment.getType() == SegmentType.Ack && ackSegment.getSq() == currentSeg) {
+                            System.out.println("SENDER: Received ACK for segment " + currentSeg);
+							System.out.println("------------------------------------------------------------------");
+                            ackReceived = true;
+                            retries = 0; // reset retries since we successfully received ACK
+                        } else {
+                            throw new IOException("SENDER: Received incorrect ACK");
+                        }
+                    } catch (SocketTimeoutException e) {
+						retries++;
+                        System.out.println("SENDER: TIMEOUT! Resending segment " + currentSeg + " (current retry count: " + retries + ")");
+                    }
+                }
+
+                if (retries >= RETRY_LIMIT) {
+                    System.out.println("Reached retry limit for segment " + currentSeg + ". Exiting transmission.");
+                    break;
+                }
+
+                // Increment the segment number
+                currentSeg = (currentSeg + 1) % 2;
+				segCount += 1;
+            }
+			if (charsRead == -1) {
+				System.out.println("SENDER: Total segments sent: " + segCount);
+			}
+        } catch (IOException e) {
+            System.err.println("IOException occurred: " + e.getMessage());
+        } catch (ClassNotFoundException e) {
+            System.err.println("Class not found while reading ACK: " + e.getMessage());
+        } finally {
+            if (socket != null) { // close the socket if it's still open
+                socket.close();
+            }
+        }
+    }
 
 
 }
