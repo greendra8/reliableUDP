@@ -178,6 +178,7 @@ public class Client {
 		}
 		// work out how many segments we are going to send
 		int currentSeg = 0;
+		int segCount = 0;
 
 		
 		try (Reader reader = new FileReader(file)) {
@@ -199,27 +200,33 @@ public class Client {
 				byte[] sendData = outputStream.toByteArray(); // copies contents from ByteArrayOutputStream buffer to a byte array
 				// create and send the packet
 				DatagramPacket packet = new DatagramPacket(sendData, sendData.length, IPAddress, portNumber);
-				System.out.println("Sending segment " + currentSeg);
+				System.out.println("SENDER: Sending segment: sq:" + currentSeg + ", size:" + charsRead + ", checksum:" + segment.getChecksum() + ", content: (" + payload + ")");
 				socket.send(packet);
 				
 
 				// wait for ack before sending next segment
 				byte[] receiveData = new byte[1024]; // buffer to store received data
 				DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length); // packet to store received data
+				System.out.println("SENDER: Waiting for ACK");
 				socket.receive(receivePacket); // receive data from the socket and store it in the packet
 				ByteArrayInputStream inputStream = new ByteArrayInputStream(receiveData); // place in memory where we can read bytes. takes received data and puts it in the buffer
 				ObjectInputStream is = new ObjectInputStream(inputStream); // deserializes the received data and converts it to an object
 				Segment ackSegment = (Segment) is.readObject(); // reads the object and casts it to a Segment object so we can access its fields
 				// check if the ack is correct (type and sequence number)
 				if (ackSegment.getType() == SegmentType.Ack && ackSegment.getSq() == currentSeg) {
-					System.out.println("Received ACK for segment " + currentSeg);
+					System.out.println("SENDER: Received ACK for segment " + currentSeg);
+					System.out.println("------------------------------------------------------------------");
 				} else {
-					System.out.println("Received NAK for segment " + currentSeg);
+					System.out.println("ERROR: Received incorrect ACK");
 					System.out.println("Expected ACK: " + currentSeg + " Received ACK: " + ackSegment.getSq());
 					System.out.println("Expected Type: " + SegmentType.Ack + " Received Type: " + ackSegment.getType());
 				}
-				// increment the segment number
+				// switch segment number
 				currentSeg = (currentSeg + 1) % 2;
+				segCount += 1;
+            }
+			if (charsRead == -1) {
+				System.out.println("SENDER: Total segments sent: " + segCount);
             }
         } catch (Exception e) {
             e.printStackTrace();
