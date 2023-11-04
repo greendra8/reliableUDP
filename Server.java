@@ -207,8 +207,95 @@ public class Server {
 	 * 
 	 * Do not change the method signature 
 	 */
-	public void receiveFileWithAckLost(float loss) {
-		exitErr("receiveFileWithAckLost is not implemented");
+	public void receiveFileWithAckLost(float loss) throws IOException {
+		FileWriter myWriter = new FileWriter(outputFileName);
+		int currentTotal = 0;
+		int lastSq = -1;
+		boolean newSegment = false;
+		byte[] incomingData = new byte[1024];
+		Segment dataSeg = new Segment(); 
+
+		/* while still receiving segments */
+		while (currentTotal < totalBytes) {
+			DatagramPacket incomingPacket = new DatagramPacket(incomingData, incomingData.length);
+			//receive from the client    
+			socket.receive(incomingPacket);
+
+			byte[] data = incomingPacket.getData();
+			ByteArrayInputStream in = new ByteArrayInputStream(data);
+			ObjectInputStream is = new ObjectInputStream(in);
+
+
+			try {
+				dataSeg = (Segment) is.readObject(); 
+
+				System.out.println("SERVER: A Segment with sq "+ dataSeg.getSq()+" is received: "); 
+				System.out.println("\tINFO: size "+ dataSeg.getSize() +", checksum "+ dataSeg.getChecksum()+", content ("+dataSeg.getPayLoad()+")" );
+			} catch (ClassNotFoundException e) {
+				e.printStackTrace();
+			}
+
+
+			InetAddress IPAddress = incomingPacket.getAddress();
+			int port = incomingPacket.getPort();
+
+			int x = checksum(dataSeg.getPayLoad());
+
+			// If the calculated checksum is same as that of received checksum then send corresponding ack
+			if(x == dataSeg.getChecksum() && dataSeg.getSq() != lastSq){ // if checksum is valid
+				System.out.println("SERVER: Calculated checksum is " + x + "  VALID");
+				myWriter.write(dataSeg.getPayLoad());
+				currentTotal = currentTotal + dataSeg.getSize();
+				newSegment = true;
+			} else {
+				// handle invalid checksum
+				if (x != dataSeg.getChecksum()) {
+					System.out.println("SERVER: Calculated checksum is " + x + " - INVALID");
+					System.out.println("SERVER: Not sending any ACK ");
+					continue;
+				} else {
+					System.out.println("SERVER: Calculated checksum is " + x + "  VALID");
+				}
+			}
+
+			boolean lost = isLost(loss);
+
+			Segment ackSeg = new Segment();
+			/* Prepare the Ack segment */
+			ackSeg.setSq(dataSeg.getSq()); 
+			ackSeg.setType(SegmentType.Ack);
+			// if new segment 
+			if (dataSeg.getSq() != lastSq) {
+				System.out.println("SERVER: Sending an ACK with sq " + ackSeg.getSq());
+			} else {
+				// if duplicate segment
+				System.out.println("SERVER: Resending an ACK with sq " + ackSeg.getSq());
+			}
+			if (!lost) {
+				ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+				ObjectOutputStream os = new ObjectOutputStream(outputStream);
+				os.writeObject(ackSeg);			
+				byte[] dataAck = outputStream.toByteArray();			
+				DatagramPacket replyPacket = new DatagramPacket(dataAck, dataAck.length, IPAddress, port);
+
+				/* Send the Ack segment */
+				socket.send(replyPacket);
+
+				System.out.println("\t\t>>>>>>> NETWORK: ACK is sent successfully <<<<<<<<<");
+				System.out.println("------------------------------------------------");
+				System.out.println("------------------------------------------------");
+
+			} else {
+				// If the packet is lost, we do not send the ack
+				System.out.println("\t\t>>>>>>>>> NETWORK: ACK is LOST <<<<<<<<<<<<<");
+			}
+			// update lastSq if 
+			if (newSegment) {
+				lastSq = dataSeg.getSq();
+			}
+		} 
+		System.out.println("SERVER: File copying complete\n"); 
+		myWriter.close();
 
 	}
 }
